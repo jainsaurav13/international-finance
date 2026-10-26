@@ -197,14 +197,14 @@ def make_chart(sample: pd.DataFrame, mode: str, c1: str, c2: str) -> go.Figure:
     if mode in ("Real", "Both"):
         fig.add_trace(
             go.Scatter(x=x, y=sample["Real_index"], name="Real index (sample mean = 100)",
-                       line=dict(color="#1f77b4", width=2), connectgaps=False),
+                       line=dict(color="#B8322A", width=2), connectgaps=False),
             secondary_y=False,
         )
-        fig.add_hline(y=100, line_dash="dot", line_color="gray")
+        fig.add_hline(y=100, line_dash="dot", line_color="#8A9A98")
     if mode in ("Nominal", "Both"):
         fig.add_trace(
             go.Scatter(x=x, y=sample["S_c2_per_c1"], name=s_label,
-                       line=dict(color="#d62728", width=2), connectgaps=False),
+                       line=dict(color="#3F7880", width=2), connectgaps=False),
             secondary_y=(mode == "Both"),
         )
 
@@ -309,7 +309,7 @@ def main():
     m2.metric("Mean real index", f"{sample['Real_index'].mean():.2f}")
     m3.metric("Valid months", f"{n_valid} of {len(sample)}")
     latest = sample["S_c2_per_c1"].dropna()
-    m4.metric(f"Latest S ({latest.index[-1]})", f"{latest.iloc[-1]:,.4f} {cur2}/{cur1}")
+    m4.metric(f"Latest S, {cur2} per {cur1} ({latest.index[-1]})", f"{latest.iloc[-1]:,.4f}")
 
     st.plotly_chart(make_chart(sample, mode, cur1, cur2), width="stretch")
     st.caption(
