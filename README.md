@@ -29,6 +29,8 @@ The data comes from the IMF SDMX 3.0 API at `https://api.imf.org/external/sdmx/3
 | CPI, all items, index | `IMF.STA/CPI` | `{ISO3}.CPI._T.IX.M` |
 | Exchange rate, LCU per USD, period average | `IMF.STA/ER` | `{ISO3}.XDC_USD.PA_RT.M` |
 
+- If `{ISO3}.CPI._T.IX.M` is empty (as for the Euro area, `G163`), the app tries `{ISO3}.HICP._T.IX.M`, shows a note when it does, and lists the key it used in the coverage table.
+- Euro area exchange rates start in January 1999, so euro pairs start there.
 - The US exchange rate is set to 1 (USD per USD), since the IMF doesn't publish it.
 - A month only counts if all four inputs exist. Gaps show as breaks in the chart and blanks in the CSV.
 - Coverage varies by country. Use the "Data coverage" panel to see each series' first and last month.

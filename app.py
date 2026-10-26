@@ -82,16 +82,20 @@ def parse_sdmx_json(payload: dict) -> pd.Series:
     time_pos = next((i for i, d in enumerate(obs_dims) if d.get("id") == "TIME_PERIOD"), 0)
     times = [v.get("value", v.get("id")) for v in obs_dims[time_pos].get("values", [])]
 
-    values: dict[pd.Period, float] = {}
+    # A wildcard key can match several series; keep the longest one.
+    best: dict[pd.Period, float] = {}
     for series in (datasets[0].get("series") or {}).values():
+        values: dict[pd.Period, float] = {}
         for obs_key, obs in (series.get("observations") or {}).items():
             idx = int(str(obs_key).split(":")[time_pos])
             period = parse_period(times[idx])
             raw = obs[0] if isinstance(obs, list) and obs else None
             if period is None or raw in (None, "", "NaN"):
                 continue
-            values.setdefault(period, float(raw))
-    return pd.Series(values, dtype=float).sort_index()
+            values[period] = float(raw)
+        if len(values) > len(best):
+            best = values
+    return pd.Series(best, dtype=float).sort_index()
 
 
 def parse_sdmx_csv(text: str) -> pd.Series:
@@ -130,12 +134,19 @@ def fetch_imf_series(dataflow: str, key: str) -> tuple[pd.Series, str | None]:
     return pd.Series(dtype=float), f"{dataflow} {key} failed. Last error: {last_error}"
 
 
-def load_country(iso3: str) -> tuple[pd.Series, pd.Series, list[str]]:
-    """CPI index and LCU-per-USD period-average exchange rate for one country."""
+def load_country(iso3: str) -> tuple[pd.Series, pd.Series, list[str], str]:
+    """CPI index, LCU-per-USD period-average exchange rate, errors, and the CPI key used."""
     errors = []
-    cpi, err = fetch_imf_series("CPI", f"{iso3}.CPI._T.IX.M")
-    if err:
-        errors.append(err)
+    # Primary key is {ISO3}.CPI._T.IX.M. The euro area publishes HICP rather than
+    # a national CPI, so only if the CPI key is empty, try the HICP equivalent.
+    cpi, cpi_key = pd.Series(dtype=float), "none found"
+    for key in (f"{iso3}.CPI._T.IX.M", f"{iso3}.HICP._T.IX.M"):
+        cpi, err = fetch_imf_series("CPI", key)
+        if err:
+            errors.append(err)
+        if not cpi.empty:
+            cpi_key = key
+            break
 
     if iso3 == "USA":
         # USD per USD is 1 by definition; the IMF does not publish it.
@@ -145,7 +156,7 @@ def load_country(iso3: str) -> tuple[pd.Series, pd.Series, list[str]]:
         fx, err = fetch_imf_series("ER", f"{iso3}.XDC_USD.PA_RT.M")
         if err:
             errors.append(err)
-    return cpi, fx, errors
+    return cpi, fx, errors, cpi_key
 
 
 # ---------------------------------------------------------------------------
@@ -236,16 +247,27 @@ def main():
         st.stop()
 
     with st.spinner("Downloading IMF data..."):
-        cpi1, fx1, err1 = load_country(iso1)
-        cpi2, fx2, err2 = load_country(iso2)
+        cpi1, fx1, err1, key1 = load_country(iso1)
+        cpi2, fx2, err2, key2 = load_country(iso2)
 
-    for err in err1 + err2:
-        st.error(err)
+    # Only surface download errors if they left a series empty.
+    if (cpi1.empty and err1) or (fx1.empty and err1):
+        for err in err1:
+            st.error(err)
+    if (cpi2.empty and err2) or (fx2.empty and err2):
+        for err in err2:
+            st.error(err)
+
+    for label, key in ((label1, key1), (label2, key2)):
+        if ".HICP." in key:
+            st.info(f"No IMF CPI series for {label}; using HICP instead ({key}).")
 
     cur1, cur2 = currency_label(iso1, label1), currency_label(iso2, label2)
+    fx_key = lambda iso:"fixed at 1" if iso == "USA" else f"{iso}.XDC_USD.PA_RT.M"
     coverage = pd.DataFrame(
         {
             "Series": [f"CPI {label1}", f"FX {label1} (LCU/USD)", f"CPI {label2}", f"FX {label2} (LCU/USD)"],
+            "IMF key": [key1, fx_key(iso1), key2, fx_key(iso2)],
             "First month": [str(s.index.min()) if len(s) else "none" for s in (cpi1, fx1, cpi2, fx2)],
             "Last month": [str(s.index.max()) if len(s) else "none" for s in (cpi1, fx1, cpi2, fx2)],
             "Observations": [int(s.notna().sum()) for s in (cpi1, fx1, cpi2, fx2)],
